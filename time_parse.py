@@ -43,275 +43,36 @@ employee_postion_dict = {
 
 empl_id_name_dict = {
     1: "Yousaf Chaudry",
-    2: "Mohamad Majdalawi",
-    4: "Margaret Kline",
-    5: "Hannah Billings",
-    6: "Alex Wells",
-    7: "Victoria Ulrich",
-    8: "Ahmed Chaudry",
-    9: "Tamrat Hailemariam",
-    10: "Justine Elgen",
-    11: "Maya Wells",
-    12: "Eliza Aamir",
+    2: "name2",
+    4: "name4",
+    5: "name5",
+    6: "name6",
+    7: "name7",
+    8: "name8",
+    9: "name9",
+    10: "name10",
+    11: "name11",
+    12: "name12",
 }
 
 
-"""
-from crosschex_cloud_api import get_all_records, get_crosschex_token
-from time_parse import process_json_response, processing
-token = get_crosschex_token()
-response = get_all_records(token)
-df = process_json_response(response)
-r = processing(df)
---- then run prepare_timesheet_data(r)
-
-05/01/2024:
-if need all days an employee worked, then pass int of employee id to the get_previous_pp method of crosschex_cloud_api,
-this will pull specific employee records only. 
-
-02/29/2024: future implementation of creating lists and then grouped by year, of all future payperiods from T0 until any given date:
-
-future_date = datetime(2030, 6, 25)
-last_pp = calculate_pay_period(future_date)
-periods = []
-for n in range(last_pp[0]):
-	date = T0 (which is 2-19-2024)  + timedelta(days = 14 * n)
-	periods.append(calculate_pay_period(date))
-
-df9 = pd.DataFrame(periods)
-df9.rename(columns={0:"pay_period", 1:"start_date", 2:"end_date"}, inplace=True)
-df9['year_of_payperiod'] = df9['start_date'].apply(lambda row: row.year)
-c = z.groupby(['year_of_payperiod']) 
-
-
-"""
-
-
-# Functions
-
-
-def calculate_hours_from_str(a, b):
-    from dateutil.tz import gettz
-
-    tzinfos = {}
-    start = parser.parse(a)
-    end = parser.parse(b)
-    if start > end:
-        start, end = end, start
-    duration = end - start
-    duration_hours = duration.total_seconds() / 3600
-    return duration_hours
-
-
-def calculate_pay_period(date):
-    delta = date.astimezone(timezone("US/Eastern")) - T0
-    period_number = delta.days // PAY_PERIOD_LENGTH
-    period_start = T0 + timedelta(days=period_number * PAY_PERIOD_LENGTH)
-    period_end = period_start + timedelta(days=PAY_PERIOD_LENGTH - 1)
-    return period_number, period_start, period_end
-
-
-# def calculate_specific_year_pay_period(date):
-#     current_year = datetime.now().year
-#     current_years_t0 = (
-#         current_year + "-01-01" + "is this correct? need to determine every year's T0"
-#     )
-#     delta = date.astimezone(timezone("US/Eastern")) - T0
-#     period_number = delta.days // PAY_PERIOD_LENGTH
-#     period_start = T0 + timedelta(days=period_number * PAY_PERIOD_LENGTH)
-#     period_end = period_start + timedelta(days=PAY_PERIOD_LENGTH - 1)
-#     return period_number, period_start, period_end
-
-
-# 02/23/2024: need to modify this, or condense into .apply() as in calculate_pay_period
-# ---- this function specifically if overlap occurs between shifts belonging to different periods
-# ---- ie: 11pm to 7am shift, 11-12am will get counted to previous shift/payperiod, and 12am-7am to
-# ---- following pay period/shift.
-# def assign_shift_to_period(clock_in, clock_out):
-#     _, period_start_in, period_end_in = calculate_pay_period(clock_in)
-#     _, period_start_out, period_end_out = calculate_pay_period(clock_out)
-
-#     if period_start_in == period_start_out or (
-#         clock_in < period_start_out and clock_out <= period_end_out
-#     ):
-#         return period_start_out, period_end_out
-#     else:
-#         return period_start_out, period_end_out
-
-
-# def calculate_shift_hours(clock_in, clock_out):
-#     duration = clock_out - clock_in
-#     hours = duration.total_seconds() / 3600
-#     return hours
-
-
-def is_leap_year(year):
-    """
-    Determine if a given year is a leap year.
-    """
-    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
-
-
-def group_pay_periods_by_year(pay_periods):
-    """
-    Group pay periods into years based on the provided logic.
-    """
-    year_groups = {}
-    for period, details in pay_periods.items():
-        start_date = details["start"]
-        end_date = details["end"]
-        if start_date.year == end_date.year:
-            year = start_date.year
-        elif start_date.month == 12 and end_date.month == 1 and end_date.day <= 14:
-            year = end_date.year
-        else:
-            year = start_date.year
-
-        if year not in year_groups:
-            year_groups[year] = []
-        year_groups[year].append(period)
-
-    return year_groups
-
-
-def process_shifts(df):
-    """
-    02/23/2024: need to update this function, specifically 'shift_end' included inside of "paired" column,
-    and also for df['pay_period'], it will have to be based on "date" column,
-    and refactor "hours_worked" by using "hours_worked" column and just unpacking
-    and subtracting smaller values from larger if applicable (ie breaks' values from the main shift)
-    """
-
-    # Sort and calculate shift durations
-    df.sort_values(by=["workno", "checktime"], inplace=True)
-
-    # Calculate pay period for each shift
-    df["pay_period"] = df["checktime"].apply(lambda x: calculate_pay_period(x)[0])
-
-    # Calculate hours worked for each shift assuming consecutive logins as in/out pairs
-    df["shift_end"] = df.groupby("workno")["checktime"].shift(-1)
-    df["hours_worked"] = (df["shift_end"] - df["checktime"]).dt.total_seconds() / 3600
-
-    # Drop NaN values in 'shift_end' to filter out last entry or unmatched shifts
-    df.dropna(subset=["shift_end"], inplace=True)
-
-    # Group by pay period and sum hours worked
-    pay_period_summary = (
-        df.groupby(["pay_period", "workno"])["hours_worked"].sum().reset_index()
-    )
-
-    return pay_period_summary
-
-
-def pay_periods_list():
-    current_year = datetime.now().year
-    last_day_of_year = str(current_year) + "-12-31"
-    T0 = datetime.strptime("2024-02-19", "%Y-%m-%d").astimezone(timezone("US/Eastern"))
-    if T0.year != current_year:
-        print("time to change year in this code(reset T0)")
-        raise ValueError
-        # last_pay_period_current_year = calculate_pay_period(
-        #     datetime.strptime(last_day_of_year, "%Y-%m-%d")
-        # )
-        # # first_pay_period = calculate_pay_period(T0)
-        # last_day_of_t0 = T0.year + "-12-31"
-        # last_pay_period_t0_year = calculate_pay_period(
-        #     datetime.strptime(last_day_of_t0, "%Y-%m-%d")
-        # )
-        # periods = []
-        # total_periods_elapsed = (
-        #     last_pay_period_current_year[0] + last_pay_period_t0_year[0]
-        # )
-        # for n in range(total_periods_elapsed):
-        #     date = T0 + timedelta(days=14 * n)
-        #     periods.append(calculate_pay_period(date))
-        # return periods
-    last_pay_period = calculate_pay_period(
-        datetime.strptime(last_day_of_year, "%Y-%m-%d")
-    )
-    # first_pay_period = calculate_pay_period(T0)
-    periods = []
-    for n in range(last_pay_period[0]):
-        date = T0 + timedelta(days=14 * n)
-        periods.append(calculate_pay_period(date))
-    return periods
-
-
-def process_json_response(response):
-    data_list = []
-    now = datetime.now().strftime("%m_%d_%Y_%H%M")
-    for i in response["payload"][
-        "list"
-    ]:  # this is section where each entry of clockin occurs
-        first_name = i["employee"]["first_name"]
-        last_name = i["employee"]["last_name"]
-        workno = i["employee"]["workno"]
-        dept = i["employee"]["department"]
-        checktime = i["checktime"]
-        job_title = i["employee"]["job_title"]
-        device = i["device"]["name"]
-        data_list.append(
-            {
-                "first_name": first_name,
-                "last_name": last_name,
-                "workno": workno,
-                "dept": dept,
-                "checktime": checktime,
-                "job_title": job_title,
-                "device": device,
-            }
-        )
-    df_main = pd.DataFrame(data_list)
-    # df_main["checktime"] = pd.to_datetime(df_main["checktime"])
-    # df_main["checktime"] = df_main["checktime"].apply(
-    #     lambda x: x.astimezone(timezone("US/Eastern"))
-    # )
-    # df_main.to_csv(f"processed_json_df{now}.csv", index=False)
-    return df_main
-    # summary_df = process_shifts(df_main)
-    # summary_df.to_csv("latest_test.csv")
-    # return summary_df
-
-
-def calc_hours_minus_breaks(times):
-    if (
-        len(times) < 2
-        or not isinstance(times, list)
-        or not all([t.isdigit() for t in times if type(t) not in [int, float]])
-    ):
-        if (
-            isinstance(times, list)
-            and len(times) == 1
-            and type(times[0]) in [int, float]
-        ):
-            (val,) = times
-            return round(val, 2)
-        return times
-    nums = [float(time) for time in times]
-    highest_val = max(nums)
-    nums.remove(highest_val)
-    result = highest_val
-    for n in nums:
-        result = result - n
-    return round(result, 2)
 
 
 def processing(data):
-    """02/23/2024: passing group['checktime'].iloc[0].date().weekday() to DAY_OF_WEEK dict, yields 3 letter abbrev."""
-    df = process_json_response(data) if not isinstance(data, pd.DataFrame) else data
-    # df = process_json_response(data)
-    employee_dfs = []
-    # summary_df = pd.DataFrame(
-    #     columns=[
-    #         "Pay_Period",
-    #         "Employee_ID",
-    #         "Employee_Name",
-    #         "Dept",
-    #         "Total_Hours_Worked",
-    #     ]
-    # )
-    import time
+    """
+    06_28_2024: This is the core processing function, that takes the initial API data and formats/sorts/processes data into meaningful context.
+    Part of what made this script necessary it was, is because the API provides only raw time clock data, identifying every clock in for every employee.
+    It does not pair them or associate those clock-in's to work shifts, hence the need for those associations to be created. 
+    Fortunately this was possible to do programmatically because the API provides consistent format output, so this can be done as an algorithm.
 
+    
+    02/23/2024: passing group['checktime'].iloc[0].date().weekday() to DAY_OF_WEEK dict, yields 3 letter abbrev.
+    
+    """
+    df = process_json_response(data) if not isinstance(data, pd.DataFrame) else data
+    employee_dfs = []
+    import time
+# have to account for Daylight Savings Time, finally this method worked for various situations
     if time.daylight:
         delta = timedelta(hours=-1)
         df["backup_checktime"] = df["checktime"]
@@ -319,20 +80,24 @@ def processing(data):
         df["checktime"] = df["checktime"].dt.tz_convert("US/Eastern")
     else:
         df["checktime"] = pd.to_datetime(df["checktime"]).dt.tz_convert("US/Eastern")
-    # df["checktime"] = df["checktime"].apply(
-    #     lambda x: x.astimezone(timezone("US/Eastern"))
-    # )
+
+# this is first groupby operation, collecting each employee's data into own groups
     employee_dfs = [employee_group for _, employee_group in df.groupby("workno")]
     all_employees_sorted_df = pd.DataFrame()
 
     for employee in employee_dfs:
         sorted_employee_df = pd.DataFrame()
+# this is second important groupby, where each employee's related clock-in times are grouped together (to be paired)
         grouped_by_date = employee.groupby(employee["checktime"].dt.date)
 
         for date, group in grouped_by_date:
             group.sort_values(by=["checktime"], inplace=True)
             as_list = group["checktime"].tolist()
             arr = np.array(as_list)
+# this is the central pairing logic, which implements this way: 
+	# if only 2 paired times exist for an array obj, then it's fine and nothing unusual
+	# however if any ODD pair of times, this means employee missed a clock in or out;
+	# I built a check for this later
             paired = (
                 [(arr[i], arr[-i - 1]) for i in range(len(arr) // 2)]
                 if len(as_list) % 2 == 0
@@ -347,12 +112,14 @@ def processing(data):
                 group["day"],
                 # group["pp_hours_summary"],
             ) = (None, None, None, None, None)
+# this is formatting the datetime objects for display purposes, extracting them from paired
             group["paired"].iloc[0] = (
                 [(f"{x[0].strftime('%H%M')}-{x[1].strftime('%H%M')}") for x in paired]
                 if len(as_list) % 2 == 0
                 else [x.strftime("%H%M") for x in paired]
             )
             group.dropna(subset=["paired"], inplace=True)
+# here the string "Manually ..." gets assigned to those odd numbered of clock-in's, else normal str conversion occurs using helper function
             hours_data = (
                 [
                     calculate_hours_from_str(
@@ -422,6 +189,8 @@ def processing(data):
         + " - "
         + row[0][2].strftime("%m-%d-%Y")
     )
+# here is where the "0" gets assigned to any date where an employee's times need to be adjusted, 
+# easy to catch later and contact employee to update
     all_employees_sorted_df.loc[
         all_employees_sorted_df["hours_worked"].astype(str).str.contains("Manual"),
         "hours_worked",
@@ -444,164 +213,181 @@ def processing(data):
     return all_employees_sorted_df
 
 
-def process_exported_timesheet(data):
-    df = pd.read_csv(data)
-    employee_dfs = []
-    df.rename(
-        columns={
-            "Name": "name",
-            "Employee No.": "employee_id",
-            "Department": "dept",
-            "Date": "date",
-            "Time": "time",
-            "Device": "device",
-        },
-        inplace=True,
-    )
-    df["position"] = df["employee_id"].apply(lambda x: employee_postion_dict[x])
+def calculate_hours_from_str(a, b):
+    from dateutil.tz import gettz
 
-    def combine_time(row):
-        return datetime.strptime(row["date"] + " " + row["time"], "%m/%d/%Y %I:%M %p")
+    tzinfos = {}
+    start = parser.parse(a)
+    end = parser.parse(b)
+    if start > end:
+        start, end = end, start
+    duration = end - start
+    duration_hours = duration.total_seconds() / 3600
+    return duration_hours
 
-    df["checktime"] = df.apply(lambda x: combine_time(x), axis=1)
-    df["checktime"] = df["checktime"].apply(lambda x: x.tz_localize("US/Eastern"))
-    # .dt.tz_localize('US/Pacific')
-    employee_dfs = [employee_group for _, employee_group in df.groupby("employee_id")]
+# one of the most central functions that formed basis which I built off of
+# assuming an initial T0 is known, any future or current pay period (2 week length)
+# can be determined
+def calculate_pay_period(date):
+    delta = date.astimezone(timezone("US/Eastern")) - T0
+    period_number = delta.days // PAY_PERIOD_LENGTH
+    period_start = T0 + timedelta(days=period_number * PAY_PERIOD_LENGTH)
+    period_end = period_start + timedelta(days=PAY_PERIOD_LENGTH - 1)
+    return period_number, period_start, period_end
 
-    all_employees_sorted_df = pd.DataFrame()
 
-    for employee in employee_dfs:
-        sorted_employee_df = pd.DataFrame()
-        grouped_by_date = employee.groupby(employee["checktime"].dt.date)
+# def calculate_specific_year_pay_period(date):
+#     current_year = datetime.now().year
+#     current_years_t0 = (
+#         current_year + "-01-01" + "is this correct? need to determine every year's T0"
+#     )
+#     delta = date.astimezone(timezone("US/Eastern")) - T0
+#     period_number = delta.days // PAY_PERIOD_LENGTH
+#     period_start = T0 + timedelta(days=period_number * PAY_PERIOD_LENGTH)
+#     period_end = period_start + timedelta(days=PAY_PERIOD_LENGTH - 1)
+#     return period_number, period_start, period_end
 
-        for date, group in grouped_by_date:
-            group.sort_values(by=["checktime"], inplace=True)
-            as_list = group["checktime"].tolist()
-            arr = np.array(as_list)
-            paired = (
-                [(arr[i], arr[-i - 1]) for i in range(len(arr) // 2)]
-                if len(as_list) % 2 == 0
-                else [arr[i] for i in range(len(arr))]
-            )
-            group["date"] = date.strftime("%m-%d-%Y")
-            (
-                group["pay_period"],
-                group["paired"],
-                group["hours_worked"],
-                group["paired_data"],
-                group["day"],
-                # group["pp_hours_summary"],
-            ) = (None, None, None, None, None)
-            group["paired"].iloc[0] = (
-                [(f"{x[0].strftime('%H%M')}-{x[1].strftime('%H%M')}") for x in paired]
-                if len(as_list) % 2 == 0
-                else [x.strftime("%H%M") for x in paired]
-            )
-            group.dropna(subset=["paired"], inplace=True)
-            hours_data = (
-                [
-                    calculate_hours_from_str(
-                        x[0].strftime("%m/%d/%Y %H%M"), x[1].strftime("%m/%d/%Y %H%M")
-                    )
-                    for x in paired
-                ]
-                if len(as_list) % 2 == 0
-                else f"Manually calculate, data missing/incorrect; notify {group['name'].iloc[0]}, Employee ID-{group['employee_id'].iloc[0]}, to file Attendance Request for {group['date'].iloc[0]}."
-            )
-            day = group["checktime"].iloc[0].date().weekday()
-            group["day"].iloc[0] = DAY_OF_WEEK[day]
-            group["hours_worked"].iloc[0] = calc_hours_minus_breaks(hours_data)
-            group["paired_data"].iloc[0] = paired
-            group["pay_period"] = group["checktime"].apply(
-                lambda row: calculate_pay_period(row)[0]
-            )
-            group = group.reindex(
-                columns=[
-                    # "pp_hours_summary",
-                    "pay_period",
-                    "day",
-                    "date",
-                    "name",
-                    "employee_id",
-                    "hours_worked",
-                    "device",
-                    "paired_clock_times",
-                    "position",
-                    "dept",
-                    "checktime",
-                    "paired_data",
-                ]
-            )
-            sorted_employee_df = pd.concat(
-                [sorted_employee_df, group], axis=0, ignore_index=True
-            )
-        all_employees_sorted_df = pd.concat(
-            [all_employees_sorted_df, sorted_employee_df], axis=0, ignore_index=True
+
+# 02/23/2024: need to modify this, or condense into .apply() as in calculate_pay_period
+# ---- this function specifically if overlap occurs between shifts belonging to different periods
+# ---- ie: 11pm to 7am shift, 11-12am will get counted to previous shift/payperiod, and 12am-7am to
+# ---- following pay period/shift.
+# def assign_shift_to_period(clock_in, clock_out):
+#     _, period_start_in, period_end_in = calculate_pay_period(clock_in)
+#     _, period_start_out, period_end_out = calculate_pay_period(clock_out)
+
+#     if period_start_in == period_start_out or (
+#         clock_in < period_start_out and clock_out <= period_end_out
+#     ):
+#         return period_start_out, period_end_out
+#     else:
+#         return period_start_out, period_end_out
+
+
+# def calculate_shift_hours(clock_in, clock_out):
+#     duration = clock_out - clock_in
+#     hours = duration.total_seconds() / 3600
+#     return hours
+
+
+def is_leap_year(year):
+    """
+    Determines if a given year is a leap year; if case needed in future.
+    """
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+
+
+def group_pay_periods_by_year(pay_periods):
+    """
+    Groups pay periods into years based on the provided logic.
+    """
+    year_groups = {}
+    for period, details in pay_periods.items():
+        start_date = details["start"]
+        end_date = details["end"]
+        if start_date.year == end_date.year:
+            year = start_date.year
+        elif start_date.month == 12 and end_date.month == 1 and end_date.day <= 14:
+            year = end_date.year
+        else:
+            year = start_date.year
+
+        if year not in year_groups:
+            year_groups[year] = []
+        year_groups[year].append(period)
+
+    return year_groups
+
+"""
+from crosschex_cloud_api import get_all_records, get_crosschex_token
+from time_parse import process_json_response, processing
+token = get_crosschex_token()
+response = get_all_records(token)
+df = process_json_response(response)
+r = processing(df)
+--- then run prepare_timesheet_data(r)
+
+05/01/2024:
+if need all days an employee worked, then pass int of employee id to the get_previous_pp method of crosschex_cloud_api,
+this will pull specific employee records only. 
+
+02/29/2024: future implementation of creating lists and then grouped by year, of all future payperiods from T0 until any given date:
+
+future_date = datetime(2030, 6, 25)
+last_pp = calculate_pay_period(future_date)
+periods = []
+for n in range(last_pp[0]):
+	date = T0 (which is 2-19-2024)  + timedelta(days = 14 * n)
+	periods.append(calculate_pay_period(date))
+
+df9 = pd.DataFrame(periods)
+df9.rename(columns={0:"pay_period", 1:"start_date", 2:"end_date"}, inplace=True)
+df9['year_of_payperiod'] = df9['start_date'].apply(lambda row: row.year)
+c = z.groupby(['year_of_payperiod']) 
+"""
+
+
+# this function is just in case the object passed is not a dataframe, it will convert it
+def process_json_response(response):
+    data_list = []
+    now = datetime.now().strftime("%m_%d_%Y_%H%M")
+    for i in response["payload"][
+        "list"
+    ]:  # this is section where each entry of clockin occurs
+        first_name = i["employee"]["first_name"]
+        last_name = i["employee"]["last_name"]
+        workno = i["employee"]["workno"]
+        dept = i["employee"]["department"]
+        checktime = i["checktime"]
+        job_title = i["employee"]["job_title"]
+        device = i["device"]["name"]
+        data_list.append(
+            {
+                "first_name": first_name,
+                "last_name": last_name,
+                "workno": workno,
+                "dept": dept,
+                "checktime": checktime,
+                "job_title": job_title,
+                "device": device,
+            }
         )
-    all_employees_sorted_df["pay_period_dates"] = all_employees_sorted_df[
-        "checktime"
-    ].apply(lambda row: pd.Series([calculate_pay_period(row)]).to_numpy())
-    all_employees_sorted_df["pp_dates"] = all_employees_sorted_df[
-        "pay_period_dates"
-    ].apply(
-        lambda row: row[0][1].strftime("%m-%d-%Y")
-        + " - "
-        + row[0][2].strftime("%m-%d-%Y")
-    )
-    all_employees_sorted_df.loc[
-        all_employees_sorted_df["hours_worked"].astype(str).str.contains("Manual"),
-        "hours_worked",
-    ] = 0
-    all_employees_sorted_df["pp_hours_summary"] = all_employees_sorted_df.groupby(
-        ["pay_period", "pp_dates", "employee_id", "name", "dept"]
-    )["hours_worked"].transform(lambda x: x.sum())
-
-    return all_employees_sorted_df
-
-    # # Calculate pay period for each shift
-    # df["pay_period"] = df["checktime"].apply(lambda x: calculate_pay_period(x)[0])
-
-    # # Calculate hours worked for each shift assuming consecutive logins as in/out pairs
-    # df["shift_end"] = df.groupby("workno")["checktime"].shift(-1)
-    # df["hours_worked"] = (df["shift_end"] - df["checktime"]).dt.total_seconds() / 3600
-
-    # # Drop NaN values in 'shift_end' to filter out last entry or unmatched shifts
-    # df.dropna(subset=["shift_end"], inplace=True)
-
-    # # Group by pay period and sum hours worked
-    # pay_period_summary = (
-    #     df.groupby(["pay_period", "workno"])["hours_worked"].sum().reset_index()
+    df_main = pd.DataFrame(data_list)
+    # df_main["checktime"] = pd.to_datetime(df_main["checktime"])
+    # df_main["checktime"] = df_main["checktime"].apply(
+    #     lambda x: x.astimezone(timezone("US/Eastern"))
     # )
+    # df_main.to_csv(f"processed_json_df{now}.csv", index=False)
+    return df_main
+    # summary_df = process_shifts(df_main)
+    # summary_df.to_csv("latest_test.csv")
+    # return summary_df
 
-    # return pay_period_summary
+# this is second helper function for automatic subtraction of lunch breaks out of any applicable date
+# ie if worked longer than 6 hours, then removes 0.5 hours
+def calc_hours_minus_breaks(times):
+    if (
+        len(times) < 2
+        or not isinstance(times, list)
+        or not all([t.isdigit() for t in times if type(t) not in [int, float]])
+    ):
+        if (
+            isinstance(times, list)
+            and len(times) == 1
+            and type(times[0]) in [int, float]
+        ):
+            (val,) = times
+            return round(val, 2)
+        return times
+    nums = [float(time) for time in times]
+    highest_val = max(nums)
+    nums.remove(highest_val)
+    result = highest_val
+    for n in nums:
+        result = result - n
+    return round(result, 2)
 
-
-def calc_pp_year(future_date, current_year: bool = False, current_pp: bool = False):
-    date = (
-        datetime.strptime(future_date, "%m-%d-%Y")
-        if not isinstance(future_date, datetime)
-        else future_date
-    )
-    last_pp = calculate_pay_period(date)
-    periods = []
-    for n in range(last_pp[0]):
-        date = T0 + timedelta(days=14 * n)
-        periods.append(calculate_pay_period(date))
-    df = pd.DataFrame(periods)
-    df.rename(columns={0: "pay_period", 1: "start_date", 2: "end_date"}, inplace=True)
-    df["year_of_payperiod"] = df["start_date"].apply(lambda row: row.year)
-    grouped = df.groupby(["year_of_payperiod"])
-    if current_pp:
-        # df_year =
-        return df[
-            (df["start_date"].dt.date < datetime.now().date())
-            & (df["end_date"].dt.date > datetime.now().date())
-        ]
-    if current_year:
-        return [(a[0], b) for a, b in grouped if a[0] == datetime.now().year]
-    return [(a[0], b) for a, b in grouped]
-
-
+# this is first helper function for lunch calculation
 def calc_lunch(df):
     multiplier = 0.5
     counter = 0
@@ -610,7 +396,7 @@ def calc_lunch(df):
             counter += 1
     return counter * multiplier
 
-
+# this function prepares and outputs the data into XLSX
 def prepare_timesheet_data(df_origin):
     # the df sent to this function should be from processing()
     groupby_obj = df_origin.groupby("name", group_keys=True)[
@@ -720,37 +506,6 @@ def prepare_timesheet_data(df_origin):
     ws.column_dimensions["D"].width = 35
     ws.column_dimensions["E"].width = 35
 
-    # def auto_col_width(ws):
-    #     # dims = {}
-    #     # for row in ws.rows:
-    #     #     for cell in row:
-    #     #         if cell.value:
-    #     #             dims[cell.column_letter] = max(
-    #     #                 (dims.get(cell.column_letter, 0), len(str(cell.value).strip()))
-    #     #             )
-    #     # for col, value in dims.items():
-    #     #     ws.column_dimensions[col].width = value * 1.2
-    #     ws.column_dimensions["A"].width = 25
-    #     ws.column_dimensions["B"].width = 25
-    #     ws.column_dimensions["C"].width = 25
-    #     ws.column_dimensions["D"].width = 35
-    #     ws.column_dimensions["E"].width = 35
-    #     print(f"adjusted columns: A, B, C, D, E")
-
-    # for column in ws.columns:
-    #     max_length = 0
-    #     column_letter = column[0].column_letter
-    #     for cell in column:
-    #         try:
-    #             if len(str(cell.value)) > max_length:
-    #                 max_length = len(cell.value)
-    #         except:
-    #             pass
-    #     adjusted_width = (max_length + 2) * 1.2
-    #     ws.column_dimensions[column_letter].width = adjusted_width
-    #     print(f"adjusted column: {column}")
-
-    # auto_col_width(ws)
 
     def auto_row_height(ws):
         for row in ws.iter_rows(
