@@ -41,7 +41,7 @@ empl_id_name_dict = {
     12: "Eliza Aamir",
 }
 
-
+# this gets the initial token used per session
 def get_crosschex_token():
     url = "https://api.us.crosschexcloud.com"
     now = datetime.now()
@@ -51,8 +51,8 @@ def get_crosschex_token():
         "header[version]": "1.0",
         "header[requestId]": "f1becc28-ad01-b5b2-7cef-392eb1526f39",
         "header[timestamp]": f"{now}",
-        "payload[api_key]": "8dbfd61682c1a7a8a5af9b629dfa93a5",
-        "payload[api_secret]": "2ee57ea8ce1449f1a0c966d6690ba888",
+        "payload[api_key]": "_apikey_",
+        "payload[api_secret]": "_secret_",
     }
     files = []
     headers = {}
@@ -62,6 +62,52 @@ def get_crosschex_token():
     print(response.text)
     return response.json()["payload"]["token"]
 
+# this is the primary function to get the API data, defaults to previous pay period for simplicity, can be adjusted myriad of ways
+def get_previous_pp(employee_id=None):
+    """
+    Arg a = payload[begin_time]
+    Arb b = payload[end_time]
+    --- Both should be datetime objects, as of 03/18/2024: testing 2 week intervals. ---
+    """
+    url = "https://api.us.crosschexcloud.com"
+    now = datetime.now()
+    new_token = get_crosschex_token()
+    from time_parse import calculate_pay_period
+
+    current_pp_number, current_pp_start, current_pp_end = calculate_pay_period(now)
+    delta = timedelta(days=1)
+    prior_pp_boundary = current_pp_start - delta
+    prior_pp_number, prior_pp_start, prior_pp_end = calculate_pay_period(
+        prior_pp_boundary
+    )
+    payload = {
+        "header[nameSpace]": "attendance.record",
+        "header[nameAction]": "getrecord",
+        "header[version]": "1.0",
+        "header[requestId]": "f1becc28-ad01-b5b2-7cef-392eb1526f39",
+        "header[timestamp]": f"{now}",
+        "authorize[type]": "token",
+        "authorize[token]": f"{new_token}",
+        "payload[begin_time]": f"{prior_pp_start}",
+        "payload[end_time]": f"{prior_pp_end}",
+        # "payload[begin_time]": f"{datetime(2023, 2, 11)}",
+        # "payload[end_time]": f"{datetime(2025, 2, 27)}",
+        # "payload[workno]": f"{int(employee_id)}",
+        "payload[order]": "asc",
+    }
+    if employee_id:
+        payload["payload[workno]"] = f"{int(employee_id)}"
+
+    files = []
+    headers = {}
+
+    response = requests.request("POST", url, headers=headers, data=payload, files=files)
+
+    if response.json()["payload"]["count"] >= 100:
+        return get_all_previous_pp()
+
+    # print(response.text)
+    return response.json()
 
 def get_all_records():
     url = "https://api.us.crosschexcloud.com"
@@ -124,52 +170,6 @@ def get_specified_records(a=None, b=None):
     # print(response.text)
     return response.json()
 
-
-def get_previous_pp(employee_id=None):
-    """
-    Arg a = payload[begin_time]
-    Arb b = payload[end_time]
-    --- Both should be datetime objects, as of 03/18/2024: testing 2 week intervals. ---
-    """
-    url = "https://api.us.crosschexcloud.com"
-    now = datetime.now()
-    new_token = get_crosschex_token()
-    from time_parse import calculate_pay_period
-
-    current_pp_number, current_pp_start, current_pp_end = calculate_pay_period(now)
-    delta = timedelta(days=1)
-    prior_pp_boundary = current_pp_start - delta
-    prior_pp_number, prior_pp_start, prior_pp_end = calculate_pay_period(
-        prior_pp_boundary
-    )
-    payload = {
-        "header[nameSpace]": "attendance.record",
-        "header[nameAction]": "getrecord",
-        "header[version]": "1.0",
-        "header[requestId]": "f1becc28-ad01-b5b2-7cef-392eb1526f39",
-        "header[timestamp]": f"{now}",
-        "authorize[type]": "token",
-        "authorize[token]": f"{new_token}",
-        "payload[begin_time]": f"{prior_pp_start}",
-        "payload[end_time]": f"{prior_pp_end}",
-        # "payload[begin_time]": f"{datetime(2023, 2, 11)}",
-        # "payload[end_time]": f"{datetime(2025, 2, 27)}",
-        # "payload[workno]": f"{int(employee_id)}",
-        "payload[order]": "asc",
-    }
-    if employee_id:
-        payload["payload[workno]"] = f"{int(employee_id)}"
-
-    files = []
-    headers = {}
-
-    response = requests.request("POST", url, headers=headers, data=payload, files=files)
-
-    if response.json()["payload"]["count"] >= 100:
-        return get_all_previous_pp()
-
-    # print(response.text)
-    return response.json()
 
 
 def get_all_previous_pp():
